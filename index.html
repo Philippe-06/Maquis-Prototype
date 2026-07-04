@@ -393,6 +393,25 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
 .pay-credit{background:#fed7aa;color:#9a3412;}
 .pay-partial{background:#fde68a;color:#854d09;}
 
+/* Creditors panel */
+.debtors-panel{background:var(--white);border-radius:var(--radius-sm);padding:22px;margin-bottom:24px;box-shadow:var(--shadow-sm);border:1px solid var(--cream-soft);border-left:4px solid var(--clay);}
+.debtors-panel.empty{border-left-color:var(--success);}
+.debtors-empty{display:flex;align-items:center;gap:12px;color:var(--success);font-weight:600;font-size:.95rem;}
+.debtors-empty i{font-size:1.3rem;}
+.debtors-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed var(--cream-soft);}
+.debtors-header h4{font-family:var(--font-display);font-size:1.1rem;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+.debtors-header h4 i{color:var(--clay);}
+.debtors-header p{font-size:.82rem;color:#6a6a6a;}
+.debtors-total{font-family:var(--font-display);font-weight:800;font-size:1.6rem;color:var(--clay);text-align:right;}
+.debtors-total .dt-label{display:block;font-size:.68rem;font-family:var(--font-body);color:#6a6a6a;text-transform:uppercase;letter-spacing:.06em;font-weight:700;}
+.debtors-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;}
+.debtor-item{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--cream);border-radius:10px;cursor:pointer;transition:transform .15s ease,background .15s ease;gap:10px;}
+.debtor-item:hover{transform:translateX(3px);background:var(--cream-soft);}
+.debtor-name{font-weight:700;color:var(--ink);font-size:.95rem;display:flex;align-items:center;flex-wrap:wrap;gap:4px;}
+.debtor-meta{font-size:.75rem;color:#6a6a6a;margin-top:2px;}
+.debtor-amount{font-family:var(--font-display);font-weight:800;color:var(--clay);font-size:1.05rem;text-align:right;white-space:nowrap;}
+.debtor-of{font-family:var(--font-body);font-size:.7rem;color:#6a6a6a;font-weight:600;}
+
 .payment-history{background:var(--white);border:1px dashed var(--cream-soft);border-radius:10px;padding:14px;margin-top:12px;}
 .payment-history h5{font-family:var(--font-display);font-size:.95rem;color:var(--ink);margin-bottom:8px;}
 .payment-entry{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.08);font-size:.85rem;}
@@ -646,6 +665,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       <div class="payment-grid reveal-stagger reveal">
         <div class="pay-card stagger-child"><div class="pay-inner"><div class="pay-front"><i class="fas fa-mobile-alt"></i><span>MTN Mobile Money</span></div><div class="pay-back">Paiement instantané par MoMo à la livraison ou au retrait.</div></div></div>
         <div class="pay-card stagger-child"><div class="pay-inner"><div class="pay-front"><i class="fas fa-mobile-alt"></i><span>Moov Money</span></div><div class="pay-back">Réglez facilement via Moov Money, confirmation par SMS.</div></div></div>
+        <div class="pay-card stagger-child"><div class="pay-inner"><div class="pay-front"><i class="fas fa-mobile-alt"></i><span>Celtiis Cash</span></div><div class="pay-back">Paiement mobile Celtiis, rapide et sécurisé.</div></div></div>
         <div class="pay-card stagger-child"><div class="pay-inner"><div class="pay-front"><i class="fas fa-money-bill-wave"></i><span>Espèces</span></div><div class="pay-back">Paiement en espèces accepté à la livraison ou sur place.</div></div></div>
       </div>
     </div>
@@ -876,6 +896,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       <div class="radio-row" id="delPayRow">
         <label class="radio-pill checked"><input type="radio" name="delPay" value="MTN Money" checked> MTN Money</label>
         <label class="radio-pill"><input type="radio" name="delPay" value="Moov Money"> Moov Money</label>
+        <label class="radio-pill"><input type="radio" name="delPay" value="Celtiis Cash"> Celtiis Cash</label>
         <label class="radio-pill"><input type="radio" name="delPay" value="Espèces"> Espèces</label>
         <label class="radio-pill"><input type="radio" name="delPay" value="À payer"> À payer</label>
         <label class="radio-pill"><input type="radio" name="delPay" value="Tranché"> Tranché</label>
@@ -892,6 +913,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
         <div class="radio-row" id="delPartialModeRow">
           <label class="radio-pill checked"><input type="radio" name="delPartialMode" value="MTN Money" checked> MTN</label>
           <label class="radio-pill"><input type="radio" name="delPartialMode" value="Moov Money"> Moov</label>
+          <label class="radio-pill"><input type="radio" name="delPartialMode" value="Celtiis Cash"> Celtiis</label>
           <label class="radio-pill"><input type="radio" name="delPartialMode" value="Espèces"> Espèces</label>
         </div>
       </div>
@@ -925,6 +947,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       <div class="radio-row" id="pcModeRow">
         <label class="radio-pill checked"><input type="radio" name="pcMode" value="MTN Money" checked> MTN Money</label>
         <label class="radio-pill"><input type="radio" name="pcMode" value="Moov Money"> Moov Money</label>
+        <label class="radio-pill"><input type="radio" name="pcMode" value="Celtiis Cash"> Celtiis Cash</label>
         <label class="radio-pill"><input type="radio" name="pcMode" value="Espèces"> Espèces</label>
       </div>
     </div>
@@ -992,6 +1015,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
         <div class="kpi-card"><div class="kpi-label">Commandes du jour</div><div class="kpi-val" id="kpiOrders">0</div></div>
         <div class="kpi-card"><div class="kpi-label">Panier moyen</div><div class="kpi-val" id="kpiAvg">0 FCFA</div></div>
       </div>
+      <div class="debtors-panel" id="debtorsPanel"></div>
       <div class="charts-grid">
         <div class="chart-card"><h4>Revenus des 7 derniers jours</h4><canvas id="chartWeek" height="220"></canvas></div>
         <div class="chart-card"><h4>Répartition par mode de paiement</h4><canvas id="chartPay" height="220"></canvas></div>
@@ -1434,8 +1458,11 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     btn.disabled = false; btn.style.opacity = 1;
     var html = '';
     cart.forEach(function(item, idx){
+      var priceLine = item.price > 0
+        ? formatPrice(item.price)+' × '+item.qty+' = '+formatPrice(item.price*item.qty)
+        : '<em style="color:var(--clay-deep);">Prix à confirmer</em> × '+item.qty;
       html += '<div class="cart-item">'+
-        '<div class="ci-info"><div class="ci-name">'+item.name+'</div><div class="ci-price">'+formatPrice(item.price)+' × '+item.qty+' = '+formatPrice(item.price*item.qty)+'</div></div>'+
+        '<div class="ci-info"><div class="ci-name">'+item.name+'</div><div class="ci-price">'+priceLine+'</div></div>'+
         '<div class="ci-actions">'+
           '<button type="button" class="qty-btn" data-a="dec" data-i="'+idx+'">−</button>'+
           '<span class="ci-qty">'+item.qty+'</span>'+
@@ -1715,8 +1742,15 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       return;
     }
     grid.innerHTML = items.map(function(it){
-      var priceHtml = it.price ? '<div class="price">'+formatPrice(it.price)+'</div>' : '<div style="font-size:.85rem;color:var(--palm);font-weight:700;"><i class="fas fa-star"></i> Suggestion du chef</div>';
-      var btn = it.price ? '<button class="add-btn" data-name="'+it.name.replace(/"/g,'&quot;')+'" data-price="'+it.price+'"><i class="fas fa-plus"></i></button>' : '';
+      var priceHtml, btn;
+      var safeName = (it.name||'').replace(/"/g,'&quot;');
+      if (it.price){
+        priceHtml = '<div class="price">'+formatPrice(it.price)+'</div>';
+        btn = '<button class="add-btn" data-name="'+safeName+'" data-price="'+it.price+'"><i class="fas fa-plus"></i> Ajouter</button>';
+      } else {
+        priceHtml = '<div style="font-size:.85rem;color:var(--clay-deep);font-weight:700;"><i class="fas fa-star"></i> Prix à confirmer</div>';
+        btn = '<button class="add-btn" data-name="'+safeName+'" data-price="0"><i class="fas fa-plus"></i> Ajouter</button>';
+      }
       return '<div class="today-card"><span class="today-badge">Aujourd\'hui</span><h3>'+it.name+'</h3><p class="today-desc">'+(it.desc||'')+'</p><div class="dish-foot">'+priceHtml+btn+'</div></div>';
     }).join('');
   }
@@ -1795,8 +1829,59 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
 
   function refreshDashboard(){
     renderKPIs();
+    renderDebtors();
     renderOrdersTable();
     if (chartsRendered) renderCharts(true);
+  }
+
+  function getDebtors(){
+    return orderCache
+      .filter(function(o){ return o.status === 'delivered' && payStatusOf(o) !== 'paid'; })
+      .map(function(o){
+        return {
+          id: o.id,
+          name: o.customerName,
+          phone: o.phone || '',
+          total: o.totalAmount || o.confirmedAmount || 0,
+          paid: paidTotal(o),
+          remaining: remainingOf(o),
+          status: payStatusOf(o),
+          since: o.deliveredAt
+        };
+      })
+      .filter(function(d){ return d.remaining > 0; })
+      .sort(function(a,b){ return b.remaining - a.remaining; });
+  }
+
+  function renderDebtors(){
+    var panel = document.getElementById('debtorsPanel');
+    if (!panel) return;
+    var debtors = getDebtors();
+    if (!debtors.length){
+      panel.classList.add('empty');
+      panel.innerHTML = '<div class="debtors-empty"><i class="fas fa-check-circle"></i> Aucune créance en cours — tous les clients sont à jour.</div>';
+      return;
+    }
+    panel.classList.remove('empty');
+    var total = debtors.reduce(function(s,d){ return s + d.remaining; }, 0);
+    var html = '<div class="debtors-header">'+
+      '<div><h4><i class="fas fa-hand-holding-usd"></i> Créances en cours</h4><p>'+debtors.length+' client'+(debtors.length>1?'s':'')+' à relancer</p></div>'+
+      '<div class="debtors-total"><span class="dt-label">Total à recevoir</span>'+formatPrice(total)+'</div>'+
+    '</div><div class="debtors-list">';
+    debtors.forEach(function(d){
+      var badge = d.status === 'credit' ? '<span class="pay-status pay-credit">À payer</span>' : '<span class="pay-status pay-partial">Tranché</span>';
+      var since = d.since ? ' · Livrée le '+fmtDate(d.since) : '';
+      var phone = d.phone ? ' · '+d.phone : '';
+      html += '<div class="debtor-item" data-id="'+d.id+'">'+
+        '<div><div class="debtor-name">'+d.name+badge+'</div><div class="debtor-meta">Cmd #'+d.id+since+phone+'</div></div>'+
+        '<div class="debtor-amount">'+formatPrice(d.remaining)+'<div class="debtor-of">sur '+formatPrice(d.total)+'</div></div>'+
+      '</div>';
+    });
+    html += '</div>';
+    panel.innerHTML = html;
+    panel.querySelectorAll('.debtor-item').forEach(function(item){
+      item.addEventListener('click', function(){ showOrderDetail(parseInt(item.dataset.id, 10)); });
+    });
   }
 
   function paidTotal(o){
@@ -2315,15 +2400,15 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     });
 
     // Payment distribution (based on payment entries)
-    var payMap = { 'MTN Money':0, 'Moov Money':0, 'Espèces':0 };
+    var payMap = { 'MTN Money':0, 'Moov Money':0, 'Celtiis Cash':0, 'Espèces':0 };
     orders.forEach(function(o){
       (o.paymentEntries || []).forEach(function(e){
         var key = e.mode === 'MTN Mobile Money' ? 'MTN Money' : e.mode;
         if (payMap[key] != null) payMap[key] += e.amount;
       });
     });
-    var paySum = payMap['MTN Money'] + payMap['Moov Money'] + payMap['Espèces'];
-    if (paySum === 0){ payMap['MTN Money'] = 48; payMap['Moov Money'] = 32; payMap['Espèces'] = 20; }
+    var paySum = payMap['MTN Money'] + payMap['Moov Money'] + payMap['Celtiis Cash'] + payMap['Espèces'];
+    if (paySum === 0){ payMap['MTN Money'] = 42; payMap['Moov Money'] = 26; payMap['Celtiis Cash'] = 14; payMap['Espèces'] = 18; }
 
     // Month: last 12 months
     var mLabels = [], mData = [];
@@ -2341,7 +2426,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     var clay = '#c8302a', palm = '#8f1e18', ochre = '#4a0f0c';
     if (update){
       if (chartRefs.week){ chartRefs.week.data.labels = labels; chartRefs.week.data.datasets[0].data = weekData; chartRefs.week.update(); }
-      if (chartRefs.pay){ chartRefs.pay.data.datasets[0].data = [payMap['MTN Money'], payMap['Moov Money'], payMap['Espèces']]; chartRefs.pay.update(); }
+      if (chartRefs.pay){ chartRefs.pay.data.datasets[0].data = [payMap['MTN Money'], payMap['Moov Money'], payMap['Celtiis Cash'], payMap['Espèces']]; chartRefs.pay.update(); }
       if (chartRefs.month){ chartRefs.month.data.labels = mLabels; chartRefs.month.data.datasets[0].data = mData; chartRefs.month.update(); }
       return;
     }
@@ -2352,7 +2437,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     });
     chartRefs.pay = new Chart(document.getElementById('chartPay'), {
       type:'doughnut',
-      data:{ labels:['MTN Money','Moov Money','Espèces'], datasets:[{ data:[payMap['MTN Money'], payMap['Moov Money'], payMap['Espèces']], backgroundColor:[clay, palm, ochre] }] },
+      data:{ labels:['MTN Money','Moov Money','Celtiis Cash','Espèces'], datasets:[{ data:[payMap['MTN Money'], payMap['Moov Money'], payMap['Celtiis Cash'], payMap['Espèces']], backgroundColor:[clay, palm, '#e67e22', ochre] }] },
       options:{ plugins:{legend:{position:'bottom', labels:{boxWidth:12, font:{size:11}}}} }
     });
     chartRefs.month = new Chart(document.getElementById('chartMonth'), {
