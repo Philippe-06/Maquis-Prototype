@@ -12,6 +12,7 @@
 <link rel="dns-prefetch" href="https://api.qrserver.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chart.js/4.4.4/chart.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <style>
@@ -833,7 +834,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
         <ol>
           <li><strong>Téléchargez le QR code</strong> sur votre téléphone (bouton ci-dessous ou appui long sur l'image).</li>
           <li><strong>Envoyez le message WhatsApp</strong> déjà pré-écrit (le second bouton) — appuyez juste sur envoi.</li>
-          <li><strong>À la livraison</strong>, le livreur scanne le QR avec l'appareil photo de son téléphone : la page de confirmation s'ouvre pour qu'il enregistre le paiement.</li>
+          <li><strong>À la livraison</strong>, le livreur scanne le QR avec son téléphone : la page de confirmation s'ouvre, il enregistre le paiement, et le dashboard de la gérante se met à jour automatiquement.</li>
         </ol>
       </div>
       <div class="qr-actions">
@@ -984,7 +985,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
 
     <!-- Panel: overview -->
     <div class="dash-panel active" data-panel="overview">
-      <div class="dash-notice"><i class="fas fa-info-circle"></i> <span>Les données sont enregistrées localement dans ce navigateur (localStorage). Pour un vrai suivi multi-appareils avec synchronisation, un serveur sera nécessaire — je peux vous expliquer les options.</span></div>
+      <div class="dash-notice"><i class="fas fa-cloud"></i> <span>Connecté à Supabase — les commandes se synchronisent en temps réel entre tous les appareils. Le dashboard se met à jour automatiquement dès qu'une livraison est confirmée.</span></div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-label">Revenu du jour</div><div class="kpi-val" id="kpiToday">0 FCFA</div></div>
         <div class="kpi-card"><div class="kpi-label">Revenu du mois</div><div class="kpi-val" id="kpiMonth">0 FCFA</div></div>
@@ -1039,10 +1040,12 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   var RESTAURANT_NAME = 'Maquis Cotonou';
   var RESTAURANT_WHATSAPP = '22997000000'; // numéro sans "+" ni espaces
   var ADMIN_PASSWORD = 'Maquis2026';
+  var SUPABASE_URL = 'https://wwqivyudmfnouqncalxq.supabase.co';
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3cWl2eXVkbWZub3VxbmNhbHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNDg2MTIsImV4cCI6MjA5ODcyNDYxMn0.6F4xdrqdcnmV0w9y3cGaBvSCgtub4wzI6Wftcg5i71s';
   var STORAGE_KEYS = {
-    orders: 'mc_orders_v1',
-    todayMenu: 'mc_today_menu_v1',
-    counter: 'mc_order_counter_v1'
+    ordersCache: 'mc_orders_cache_v2',
+    todayMenuCache: 'mc_today_menu_cache_v2',
+    localCounter: 'mc_local_counter'
   };
 
   /* ============ Catalogue ============ */
@@ -1072,12 +1075,6 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   function formatPrice(n){ return Math.round(n).toLocaleString('fr-FR') + ' FCFA'; }
   function pad(n){ return n < 10 ? '0' + n : '' + n; }
   function nowISO(){ return new Date().toISOString(); }
-  function nextOrderNumber(){
-    var n = parseInt(localStorage.getItem(STORAGE_KEYS.counter) || '1000', 10);
-    n++;
-    localStorage.setItem(STORAGE_KEYS.counter, String(n));
-    return n;
-  }
   function loadJSON(key, fallback){
     try { var s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
     catch(e){ return fallback; }
@@ -1099,6 +1096,171 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     var d = new Date(iso), r = ref || new Date();
     return d.getFullYear()===r.getFullYear() && d.getMonth()===r.getMonth();
   }
+
+  /* ============ Supabase-backed cache ============ */
+  var sb = null;
+  var supabaseReady = false;
+  var orderCache = loadJSON(STORAGE_KEYS.ordersCache, []);
+  var todayMenuCache = null; // set after init or from local cache
+  var pendingHashAction = null;
+
+  function initSupabase(){
+    if (typeof window.supabase === 'undefined' || !window.supabase.createClient){
+      setTimeout(initSupabase, 300);
+      return;
+    }
+    try {
+      sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        realtime: { params: { eventsPerSecond: 5 } }
+      });
+    } catch(e){
+      console.error('Supabase init error', e);
+      setTimeout(finishInitFallback, 100);
+      return;
+    }
+    loadFromSupabase();
+  }
+
+  function loadFromSupabase(){
+    Promise.all([
+      sb.from('orders').select('*').order('id', { ascending: false }),
+      sb.from('today_menu').select('*').eq('id', 1).maybeSingle()
+    ]).then(function(results){
+      var ordersRes = results[0], menuRes = results[1];
+      if (ordersRes.error) throw ordersRes.error;
+      if (menuRes.error) throw menuRes.error;
+      orderCache = (ordersRes.data || []).map(rowToOrder);
+      saveJSON(STORAGE_KEYS.ordersCache, orderCache);
+      todayMenuCache = (menuRes.data && menuRes.data.items) || DEFAULT_TODAY;
+      saveJSON(STORAGE_KEYS.todayMenuCache, todayMenuCache);
+      supabaseReady = true;
+      subscribeRealtime();
+      renderTodayMenu();
+      if (dashboardOverlay && dashboardOverlay.classList.contains('open')) refreshDashboard();
+      if (pendingHashAction) executePendingHash();
+    }).catch(function(err){
+      console.error('Supabase load error', err);
+      finishInitFallback();
+    });
+  }
+
+  function finishInitFallback(){
+    // Offline / error path: use local cache
+    if (todayMenuCache === null) todayMenuCache = loadJSON(STORAGE_KEYS.todayMenuCache, DEFAULT_TODAY);
+    renderTodayMenu();
+    showToast('Mode hors ligne — vos données ne se synchronisent pas', 'error');
+    if (pendingHashAction){
+      // Try with local cache
+      executePendingHash();
+    }
+  }
+
+  function rowToOrder(row){
+    var o = row.data || {};
+    o.id = row.id;
+    if (!o.createdAt) o.createdAt = row.created_at;
+    return o;
+  }
+
+  function subscribeRealtime(){
+    if (!sb) return;
+    sb.channel('mc-orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, function(payload){
+      var evt = payload.eventType || payload.event;
+      if (evt === 'INSERT' || evt === 'UPDATE'){
+        var order = rowToOrder(payload.new);
+        var idx = orderCache.findIndex(function(o){ return o.id === order.id; });
+        if (idx >= 0) orderCache[idx] = order;
+        else orderCache.unshift(order);
+      } else if (evt === 'DELETE'){
+        var oldId = (payload.old || {}).id;
+        orderCache = orderCache.filter(function(o){ return o.id !== oldId; });
+      }
+      saveJSON(STORAGE_KEYS.ordersCache, orderCache);
+      if (dashboardOverlay && dashboardOverlay.classList.contains('open')) refreshDashboard();
+    }).subscribe();
+
+    sb.channel('mc-menu').on('postgres_changes', { event: '*', schema: 'public', table: 'today_menu' }, function(payload){
+      if (payload.new){
+        todayMenuCache = payload.new.items || [];
+        saveJSON(STORAGE_KEYS.todayMenuCache, todayMenuCache);
+        renderTodayMenu();
+        // Also refresh editor if open
+        if (dashboardOverlay && dashboardOverlay.classList.contains('open')){
+          var panel = document.querySelector('.dash-panel[data-panel="today"]');
+          if (panel && panel.classList.contains('active')) renderTodayEditor();
+        }
+      }
+    }).subscribe();
+  }
+
+  /* ============ Order CRUD ============ */
+  function getOrders(){ return orderCache; }
+  function findOrder(id){ return orderCache.find(function(o){ return o.id === id; }); }
+
+  function nextOrderNumber(){
+    if (sb && supabaseReady){
+      return sb.rpc('next_order_number').then(function(res){
+        if (res.error){ console.error(res.error); return fallbackCounter(); }
+        return res.data;
+      }).catch(function(err){ console.error(err); return fallbackCounter(); });
+    }
+    return Promise.resolve(fallbackCounter());
+  }
+  function fallbackCounter(){
+    var n = parseInt(localStorage.getItem(STORAGE_KEYS.localCounter) || '9000', 10);
+    n++;
+    localStorage.setItem(STORAGE_KEYS.localCounter, String(n));
+    return n;
+  }
+
+  function addOrder(order){
+    // Optimistic local cache
+    var existing = orderCache.find(function(o){ return o.id === order.id; });
+    if (!existing) orderCache.unshift(order);
+    saveJSON(STORAGE_KEYS.ordersCache, orderCache);
+    if (sb && supabaseReady){
+      return sb.from('orders').insert({ id: order.id, created_at: order.createdAt, data: order }).then(function(res){
+        if (res.error){
+          console.error('Insert error', res.error);
+          showToast('Erreur enregistrement — donnée en cache', 'error');
+        }
+        return order;
+      });
+    }
+    return Promise.resolve(order);
+  }
+
+  function updateOrder(id, patch){
+    var idx = orderCache.findIndex(function(o){ return o.id === id; });
+    if (idx < 0) return Promise.resolve(null);
+    Object.assign(orderCache[idx], patch);
+    var full = orderCache[idx];
+    saveJSON(STORAGE_KEYS.ordersCache, orderCache);
+    if (sb && supabaseReady){
+      return sb.from('orders').update({ data: full }).eq('id', id).then(function(res){
+        if (res.error){
+          console.error('Update error', res.error);
+          showToast('Erreur mise à jour', 'error');
+        }
+        return full;
+      });
+    }
+    return Promise.resolve(full);
+  }
+
+  function saveTodayMenu(arr){
+    todayMenuCache = arr;
+    saveJSON(STORAGE_KEYS.todayMenuCache, arr);
+    if (sb && supabaseReady){
+      sb.from('today_menu').upsert({ id: 1, items: arr, updated_at: new Date().toISOString() }).then(function(res){
+        if (res.error){
+          console.error('Menu save error', res.error);
+          showToast('Erreur sauvegarde menu', 'error');
+        }
+      });
+    }
+  }
+  function getTodayMenu(){ return todayMenuCache || loadJSON(STORAGE_KEYS.todayMenuCache, DEFAULT_TODAY); }
 
   /* ============ Header / progress / scrollspy ============ */
   var header = document.getElementById('siteHeader');
@@ -1333,20 +1495,6 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   bindPillGroup('deliveryTypeRow', 'addressGroup');
   bindPillGroup('cDeliveryRow', 'cAddressGroup');
 
-  /* ============ Orders storage ============ */
-  function getOrders(){ return loadJSON(STORAGE_KEYS.orders, []); }
-  function saveOrders(list){ saveJSON(STORAGE_KEYS.orders, list); }
-  function addOrder(order){ var list = getOrders(); list.unshift(order); saveOrders(list); return order; }
-  function updateOrder(id, patch){
-    var list = getOrders();
-    var idx = list.findIndex(function(o){ return o.id === id; });
-    if (idx < 0) return null;
-    Object.assign(list[idx], patch);
-    saveOrders(list);
-    return list[idx];
-  }
-  function findOrder(id){ return getOrders().find(function(o){ return o.id === id; }); }
-
   /* ============ Build WhatsApp message ============ */
   function buildWhatsAppMessage(order){
     var lines = [];
@@ -1402,7 +1550,7 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   }
   function buildDeliveryURL(order){
     var base = location.origin + location.pathname;
-    return base + '#mc=confirm&d=' + encodeOrderPayload(order);
+    return base + '#confirm=' + order.id;
   }
   function showQRModal(order){
     var confirmURL = buildDeliveryURL(order);
@@ -1440,29 +1588,40 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     var address = document.getElementById('cAddress').value.trim();
     var notes = document.getElementById('cNotes').value.trim();
     if (!name || !phone){ showToast('Nom et téléphone requis', 'error'); return; }
-    var order = {
-      id: nextOrderNumber(),
-      createdAt: nowISO(),
-      status: 'pending',
-      source: 'cart',
-      customerName: name,
-      phone: phone,
-      deliveryType: mode,
-      address: address,
-      notes: notes,
-      items: cart.map(function(i){ return { name:i.name, price:i.price, qty:i.qty }; }),
-      estimatedTotal: cart.reduce(function(s,i){ return s + i.price*i.qty; }, 0),
-      confirmedAmount: null,
-      paymentMode: null,
-      deliveredAt: null
-    };
-    addOrder(order);
-    cart = []; updateFab(); renderCart();
-    document.getElementById('cartCheckoutForm').reset();
-    document.querySelectorAll('#cDeliveryRow .radio-pill').forEach(function(p,i){ p.classList.toggle('checked', i===0); });
-    document.getElementById('cAddressGroup').style.display = 'block';
-    closeModal('cartModal');
-    setTimeout(function(){ showQRModal(order); }, 300);
+    var btn = document.getElementById('cartCheckoutBtn');
+    var oldTxt = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
+    nextOrderNumber().then(function(id){
+      var order = {
+        id: id,
+        createdAt: nowISO(),
+        status: 'pending',
+        source: 'cart',
+        customerName: name,
+        phone: phone,
+        deliveryType: mode,
+        address: address,
+        notes: notes,
+        items: cart.map(function(i){ return { name:i.name, price:i.price, qty:i.qty }; }),
+        estimatedTotal: cart.reduce(function(s,i){ return s + i.price*i.qty; }, 0),
+        confirmedAmount: null,
+        paymentMode: null,
+        deliveredAt: null
+      };
+      return addOrder(order).then(function(){
+        cart = []; updateFab(); renderCart();
+        document.getElementById('cartCheckoutForm').reset();
+        document.querySelectorAll('#cDeliveryRow .radio-pill').forEach(function(p,i){ p.classList.toggle('checked', i===0); });
+        document.getElementById('cAddressGroup').style.display = 'block';
+        closeModal('cartModal');
+        setTimeout(function(){ showQRModal(order); }, 300);
+      });
+    }).catch(function(err){
+      console.error(err);
+      showToast('Erreur, veuillez réessayer', 'error');
+    }).finally(function(){
+      btn.disabled = false; btn.innerHTML = oldTxt;
+    });
   });
 
   /* ============ Submit: free-text order ============ */
@@ -1476,29 +1635,41 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     var dTime = document.getElementById('deliveryTime').value;
     var notes = document.getElementById('notes').value.trim();
     if (!name || !phone || !details){ showToast('Merci de remplir tous les champs obligatoires', 'error'); return; }
-    var order = {
-      id: nextOrderNumber(),
-      createdAt: nowISO(),
-      status: 'pending',
-      source: 'free',
-      customerName: name,
-      phone: phone,
-      deliveryType: mode,
-      address: address,
-      deliveryTime: dTime,
-      notes: notes,
-      freeText: details,
-      items: [],
-      estimatedTotal: null,
-      confirmedAmount: null,
-      paymentMode: null,
-      deliveredAt: null
-    };
-    addOrder(order);
-    this.reset();
-    document.querySelectorAll('#deliveryTypeRow .radio-pill').forEach(function(p,i){ p.classList.toggle('checked', i===0); });
-    document.getElementById('addressGroup').style.display = 'block';
-    showQRModal(order);
+    var self = this;
+    var btn = this.querySelector('button[type=submit]');
+    var oldTxt = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Envoi...';
+    nextOrderNumber().then(function(id){
+      var order = {
+        id: id,
+        createdAt: nowISO(),
+        status: 'pending',
+        source: 'free',
+        customerName: name,
+        phone: phone,
+        deliveryType: mode,
+        address: address,
+        deliveryTime: dTime,
+        notes: notes,
+        freeText: details,
+        items: [],
+        estimatedTotal: null,
+        confirmedAmount: null,
+        paymentMode: null,
+        deliveredAt: null
+      };
+      return addOrder(order).then(function(){
+        self.reset();
+        document.querySelectorAll('#deliveryTypeRow .radio-pill').forEach(function(p,i){ p.classList.toggle('checked', i===0); });
+        document.getElementById('addressGroup').style.display = 'block';
+        showQRModal(order);
+      });
+    }).catch(function(err){
+      console.error(err);
+      showToast('Erreur, veuillez réessayer', 'error');
+    }).finally(function(){
+      btn.disabled = false; btn.innerHTML = oldTxt;
+    });
   });
 
   /* ============ Fab WhatsApp default ============ */
@@ -1536,7 +1707,6 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   }, {passive:true});
 
   /* ============ Menu du jour: render on site ============ */
-  function getTodayMenu(){ return loadJSON(STORAGE_KEYS.todayMenu, DEFAULT_TODAY); }
   function renderTodayMenu(){
     var grid = document.getElementById('todayGrid');
     var items = getTodayMenu();
@@ -1607,10 +1777,19 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
     });
   });
   document.getElementById('clearOrdersBtn').addEventListener('click', function(){
-    if (confirm('Vider tout l\'historique des commandes ? Cette action est irréversible.')){
-      saveOrders([]);
+    if (confirm('Vider tout l\'historique des commandes ? Cette action est irréversible et supprimera aussi les commandes dans la base cloud.')){
+      var ids = orderCache.map(function(o){ return o.id; });
+      orderCache = [];
+      saveJSON(STORAGE_KEYS.ordersCache, []);
       refreshDashboard();
-      showToast('Historique vidé', 'success');
+      if (sb && supabaseReady && ids.length){
+        sb.from('orders').delete().in('id', ids).then(function(res){
+          if (res.error){ console.error(res.error); showToast('Erreur suppression cloud', 'error'); }
+          else showToast('Historique vidé', 'success');
+        });
+      } else {
+        showToast('Historique local vidé', 'success');
+      }
     }
   });
 
@@ -1883,54 +2062,9 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       paymentStatus = 'paid';
     }
 
-    // Are we processing a scan payload (livreur on his own device)?
-    if (currentDeliveryPayload){
-      // Build callback URL to WhatsApp the manager
-      var confirmPayload = {
-        id: currentDeliveryPayload.id,
-        n: currentDeliveryPayload.n,
-        p: currentDeliveryPayload.p,
-        m: currentDeliveryPayload.m,
-        a: currentDeliveryPayload.a,
-        i: currentDeliveryPayload.i,
-        f: currentDeliveryPayload.f,
-        c: currentDeliveryPayload.c,
-        // delivery result:
-        r: {
-          st: 'delivered',
-          tot: totalAmount,
-          ps: paymentStatus,
-          pm: mode,
-          en: entries,
-          da: now
-        }
-      };
-      var json = JSON.stringify(confirmPayload);
-      var b64 = btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-      var receiveURL = location.origin + location.pathname + '#mc=received&d=' + b64;
-      var lines = [];
-      lines.push('Livraison confirmée · Commande #' + currentDeliveryPayload.id);
-      lines.push('Client : ' + currentDeliveryPayload.n);
-      lines.push('Total : ' + formatPrice(totalAmount));
-      lines.push('Mode : ' + mode);
-      if (mode === 'Tranché'){
-        lines.push('Payé maintenant : ' + formatPrice(entries[0].amount) + ' (' + entries[0].mode + ')');
-        lines.push('Reste dû : ' + formatPrice(totalAmount - entries[0].amount));
-      } else if (mode === 'À payer'){
-        lines.push('Reste dû : ' + formatPrice(totalAmount));
-      }
-      lines.push('');
-      lines.push('Cliquez ici pour mettre à jour le dashboard :');
-      lines.push(receiveURL);
-      var waLink = 'https://wa.me/' + RESTAURANT_WHATSAPP + '?text=' + encodeURIComponent(lines.join('\n'));
-      closeModal('deliveryModal');
-      // Show a "sent" screen with WhatsApp button
-      showLivreurConfirmedView(currentDeliveryPayload, totalAmount, mode, entries, waLink);
-      currentDeliveryPayload = null;
-      return;
-    }
-
-    // Otherwise, update in local storage (manager side)
+    var btn = document.getElementById('delSubmit');
+    var oldTxt = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ...';
     updateOrder(currentDeliveryOrderId, {
       status: 'delivered',
       deliveredAt: now,
@@ -1938,38 +2072,54 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       paymentMode: mode,
       paymentStatus: paymentStatus,
       paymentEntries: entries,
-      // Legacy fields (kept for backward compat)
       confirmedAmount: paymentStatus === 'paid' ? totalAmount : (entries[0] ? entries[0].amount : 0)
+    }).then(function(){
+      closeModal('deliveryModal');
+      refreshDashboard();
+      var statusText = paymentStatus === 'paid' ? 'Payée' : paymentStatus === 'credit' ? 'À payer' : 'Tranchée';
+      showToast('Livraison confirmée · ' + statusText, 'success');
+      var order = findOrder(currentDeliveryOrderId);
+      if (order) showLivreurConfirmedView(order, totalAmount, mode, entries);
+    }).catch(function(err){
+      console.error(err);
+      showToast('Erreur, réessayez', 'error');
+    }).finally(function(){
+      btn.disabled = false; btn.innerHTML = oldTxt;
     });
-    closeModal('deliveryModal');
-    refreshDashboard();
-    var statusText = paymentStatus === 'paid' ? 'Payée' : paymentStatus === 'credit' ? 'À payer' : 'Tranchée';
-    showToast('Livraison confirmée · ' + statusText, 'success');
   });
 
-  /* ============ Livreur confirmed view (after submitting from a scanned QR) ============ */
-  function showLivreurConfirmedView(payload, total, mode, entries, waLink){
-    // Reuse the delivery modal container for a simple confirmation UI
+  /* ============ Livreur confirmed view ============ */
+  function showLivreurConfirmedView(order, total, mode, entries){
+    var msg = 'Livraison confirmée · Commande #' + order.id + '\n';
+    msg += 'Client : ' + order.customerName + '\n';
+    msg += 'Total : ' + formatPrice(total) + '\n';
+    msg += 'Mode : ' + mode + '\n';
+    if (mode === 'Tranché' && entries[0]){
+      msg += 'Payé maintenant : ' + formatPrice(entries[0].amount) + ' (' + entries[0].mode + ')\n';
+      msg += 'Reste dû : ' + formatPrice(total - entries[0].amount);
+    } else if (mode === 'À payer'){
+      msg += 'Reste dû : ' + formatPrice(total);
+    }
+    var waLink = 'https://wa.me/' + RESTAURANT_WHATSAPP + '?text=' + encodeURIComponent(msg);
     var html = '<div class="modal-icon" style="color:var(--success);"><i class="fas fa-check-circle"></i></div>'+
       '<h3 style="text-align:center;">Livraison enregistrée</h3>'+
-      '<p style="text-align:center;">Commande #' + payload.id + ' — ' + payload.n + '</p>'+
+      '<p style="text-align:center;">Commande #' + order.id + ' — ' + order.customerName + '</p>'+
       '<div class="detail-list">'+
         '<div class="detail-row"><span class="l">Total</span><span class="v">' + formatPrice(total) + '</span></div>'+
         '<div class="detail-row"><span class="l">Mode</span><span class="v">' + mode + '</span></div>'+
         (entries[0] ? '<div class="detail-row"><span class="l">Payé maintenant</span><span class="v">' + formatPrice(entries[0].amount) + ' (' + entries[0].mode + ')</span></div>' : '')+
       '</div>'+
-      '<p style="text-align:center;margin:14px 0;font-size:.9rem;color:#6a6a6a;">Envoyez maintenant le message WhatsApp à la gérante pour mettre à jour son dashboard.</p>'+
+      '<p style="text-align:center;margin:14px 0;font-size:.9rem;color:var(--success);"><i class="fas fa-sync-alt"></i> Le dashboard de la gérante s\'est mis à jour automatiquement.</p>'+
       '<div class="modal-actions">'+
-        '<a class="btn btn-whatsapp btn-block" href="' + waLink + '" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Envoyer à la gérante</a>'+
+        '<a class="btn btn-whatsapp btn-block" href="' + waLink + '" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Prévenir la gérante (facultatif)</a>'+
       '</div>';
-    // Inject into detailModal for reuse
-    document.getElementById('detailTitle').textContent = 'Livraison #' + payload.id;
+    document.getElementById('detailTitle').textContent = 'Livraison #' + order.id;
     document.getElementById('detailContent').innerHTML = html;
     document.getElementById('detailActions').innerHTML = '';
     openModal('detailModal');
   }
 
-  /* ============ Hash routing: livreur QR scan + manager receive ============ */
+  /* ============ Hash routing: livreur QR scan ============ */
   function readHashParams(hash){
     var out = {};
     hash.replace(/^#/,'').split('&').forEach(function(kv){
@@ -1981,68 +2131,43 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   function handleHashOnLoad(){
     if (!location.hash) return;
     var params = readHashParams(location.hash);
-    if (params.mc === 'confirm' && params.d){
+    if (params.confirm){
+      pendingHashAction = { type: 'confirm', id: parseInt(params.confirm, 10) };
+    } else if (params.mc === 'confirm' && params.d){
+      // Legacy format (older QRs) — fall back to embedded payload
       var payload = decodeOrderPayload(params.d);
-      if (!payload){ showToast('QR code invalide', 'error'); return; }
-      // Show delivery modal populated with the scanned order
-      // Scroll to top to avoid confusion
-      window.scrollTo(0, 0);
-      setTimeout(function(){ openDeliveryModal(payload.id, payload); }, 300);
-      // Clean URL so refresh doesn't re-trigger
-      history.replaceState(null, '', location.pathname);
-    } else if (params.mc === 'received' && params.d){
-      var payload2 = decodeOrderPayload(params.d);
-      if (!payload2 || !payload2.r){ showToast('Lien invalide', 'error'); return; }
-      applyReceivedConfirmation(payload2);
-      history.replaceState(null, '', location.pathname);
+      if (payload) pendingHashAction = { type: 'legacyConfirm', payload: payload };
     }
+    // Try to execute immediately; if Supabase not ready, initSupabase will retry
+    if (supabaseReady && pendingHashAction) executePendingHash();
   }
-  function applyReceivedConfirmation(payload){
-    // Merge into local orders (or create if missing)
-    var existing = findOrder(payload.id);
-    var r = payload.r;
-    var updated = {
-      id: payload.id,
-      customerName: payload.n,
-      phone: payload.p,
-      deliveryType: payload.m,
-      address: payload.a,
-      items: (payload.i||[]).map(function(x){ return {name:x.n,price:x.p,qty:x.q}; }),
-      freeText: payload.f || '',
-      createdAt: payload.c,
-      status: 'delivered',
-      deliveredAt: r.da,
-      totalAmount: r.tot,
-      paymentMode: r.pm,
-      paymentStatus: r.ps,
-      paymentEntries: r.en || [],
-      confirmedAmount: r.ps === 'paid' ? r.tot : ((r.en||[])[0] ? r.en[0].amount : 0),
-      estimatedTotal: existing ? existing.estimatedTotal : (payload.e || null),
-      notes: existing ? existing.notes : '',
-      source: existing ? existing.source : 'scan'
-    };
-    if (existing){
-      updateOrder(payload.id, updated);
-    } else {
-      var list = getOrders();
-      list.unshift(updated);
-      saveOrders(list);
-      // Also update counter to be safe
-      var maxId = list.reduce(function(m,o){ return o.id > m ? o.id : m; }, 1000);
-      if (maxId > parseInt(localStorage.getItem(STORAGE_KEYS.counter)||'1000',10)){
-        localStorage.setItem(STORAGE_KEYS.counter, String(maxId));
+  function executePendingHash(){
+    if (!pendingHashAction) return;
+    var action = pendingHashAction;
+    pendingHashAction = null;
+    if (action.type === 'confirm'){
+      var order = findOrder(action.id);
+      if (!order){
+        showToast('Commande #' + action.id + ' introuvable', 'error');
+        return;
       }
+      if (order.status === 'delivered'){
+        showToast('Commande #' + action.id + ' déjà livrée', 'info');
+        return;
+      }
+      window.scrollTo(0, 0);
+      setTimeout(function(){ openDeliveryModal(action.id); }, 300);
+    } else if (action.type === 'legacyConfirm'){
+      var p = action.payload;
+      window.scrollTo(0, 0);
+      setTimeout(function(){ openDeliveryModal(p.id, p); }, 300);
     }
-    showToast('Livraison confirmée · #' + payload.id, 'success');
-    // Open admin modal (need password to open dashboard)
-    setTimeout(function(){
-      document.getElementById('adminPass').value = '';
-      openModal('adminModal');
-      setTimeout(function(){ document.getElementById('adminPass').focus(); }, 200);
-    }, 400);
+    history.replaceState(null, '', location.pathname);
   }
   handleHashOnLoad();
   window.addEventListener('hashchange', handleHashOnLoad);
+  // Kick off Supabase init after everything is bound
+  initSupabase();
 
   /* ============ QR scanner ============ */
   var scannerInstance = null;
@@ -2127,9 +2252,8 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
       b.addEventListener('click', function(){
         var arr = collectTodayFromEditor();
         arr.splice(parseInt(b.dataset.del,10), 1);
-        saveJSON(STORAGE_KEYS.todayMenu, arr);
+        saveTodayMenu(arr);
         renderTodayEditor();
-        renderTodayMenu();
       });
     });
   }
@@ -2147,20 +2271,19 @@ footer{background:#1a0505;color:#e0d0ce;padding:60px 0 22px;}
   document.getElementById('addTodayBtn').addEventListener('click', function(){
     var arr = collectTodayFromEditor();
     arr.push({ name:'', desc:'', price:0 });
-    saveJSON(STORAGE_KEYS.todayMenu, arr);
+    todayMenuCache = arr;
     renderTodayEditor();
   });
   document.getElementById('saveTodayBtn').addEventListener('click', function(){
     var arr = collectTodayFromEditor();
-    saveJSON(STORAGE_KEYS.todayMenu, arr);
-    renderTodayMenu();
+    saveTodayMenu(arr);
+    renderTodayEditor();
     showToast('Menu du jour enregistré', 'success');
   });
   document.getElementById('resetTodayBtn').addEventListener('click', function(){
     if (confirm('Réinitialiser le menu du jour aux valeurs par défaut ?')){
-      saveJSON(STORAGE_KEYS.todayMenu, DEFAULT_TODAY);
+      saveTodayMenu(DEFAULT_TODAY.slice());
       renderTodayEditor();
-      renderTodayMenu();
       showToast('Menu réinitialisé', 'success');
     }
   });
